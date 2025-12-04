@@ -1,4 +1,9 @@
 #include "systemcalls.h"
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h> 
+#include <sys/wait.h>
+#include <fcntl.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -14,10 +19,21 @@ bool do_system(const char *cmd)
  * TODO  add your code here
  *  Call the system() function with the command set in the cmd
  *   and return a boolean true if the system() call completed with success
- *   or false() if it returned a failure
+ *   or false if it returned a failure
 */
+    int status = system(cmd);
 
-    return true;
+    fflush(stdout);
+    // system() call failure
+    if (status == -1)
+        return false;
+
+    // If process exited normally, check exit code
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+        return true;
+
+    // Non-zero exit code OR terminated by signal
+    return false;
 }
 
 /**
@@ -45,9 +61,6 @@ bool do_exec(int count, ...)
         command[i] = va_arg(args, char *);
     }
     command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
 
 /*
  * TODO:
@@ -57,11 +70,33 @@ bool do_exec(int count, ...)
  *   (first argument to execv), and use the remaining arguments
  *   as second argument to the execv() command.
  *
-*/
-
+*/  
     va_end(args);
 
-    return true;
+    fflush(stdout);
+    pid_t pid = fork();
+    if (pid == -1){
+        return false;
+    }
+    // 0 means we are in the child process
+    else if (pid == 0){
+        execv(command[0], command);
+        // If execv returns something went wrong, we will tell the parent that the failure happened
+        exit(-1);
+    }
+    int status;
+
+    if (waitpid (pid, &status, 0) == -1){
+        return false;
+    }
+    else if (WIFEXITED (status)){
+        if (WEXITSTATUS (status) == 0){
+            return true;
+        }
+        return false;
+    }
+    
+    return false;
 }
 
 /**
@@ -80,10 +115,6 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
         command[i] = va_arg(args, char *);
     }
     command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
-
 
 /*
  * TODO
@@ -95,5 +126,51 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
 
     va_end(args);
 
-    return true;
+    fflush(stdout);
+    pid_t pid = fork();
+    if (pid == -1){
+        return false;
+    }
+
+    if (pid == 0) {
+        // ---- Child process ----
+
+        // Open (or create) the output file, truncate if it exists
+        int fd = open(outputfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd < 0) {
+            perror("open");
+            exit(-1);
+        }
+
+        // Redirect STDOUT to this file
+        if (dup2(fd, STDOUT_FILENO) < 0) {
+            perror("dup2");
+            close(fd);
+            exit(-1);
+        }
+
+        // We don't need this fd anymore; STDOUT now points to it
+        close(fd);
+
+        // Replace child process image with the requested program
+        execv(command[0], command);
+
+        // If execv returns, it failed
+        perror("execv");
+        exit(-1);
+    }
+
+    // ---- Parent process ----
+    int status;
+    if (waitpid(pid, &status, 0) < 0) {
+        perror("waitpid");
+        return false;
+    }
+
+    // Return true only if the child exited normally with status 0
+    if (WIFEXITED(status) && (WEXITSTATUS(status) == 0)) {
+        return true;
+    } else {
+        return false;
+    }
 }
