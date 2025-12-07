@@ -42,6 +42,8 @@ if [ ! -e "${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image" ]; then
     make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} defconfig
     echo "Building kernel"
     make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} -j4 all
+    echo "Copying Image"
+    cp ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ${OUTDIR}
 fi
 
 
@@ -54,6 +56,12 @@ then
 fi
 
 # TODO: Create necessary base directories
+# NOTE: I don't know why we rebuild rootfs everytime but not the kernel
+mkdir -p "${OUTDIR}/rootfs" || exit 1
+cd "${OUTDIR}/rootfs"
+mkdir bin dev etc home lib lib64 proc sbin sys tmp
+mkdir -p usr/bin usr/lib usr/lib64 usr/sbin
+mkdir -p var/log
 
 cd "$OUTDIR"
 if [ ! -d "${OUTDIR}/busybox" ]
@@ -62,17 +70,33 @@ git clone git://busybox.net/busybox.git
     cd busybox
     git checkout ${BUSYBOX_VERSION}
     # TODO:  Configure busybox
+    echo "Cleaning old files busybox"
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} distclean
+    echo "Selecting default configuration busybox"
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} defconfig
 else
     cd busybox
 fi
 
 # TODO: Make and install busybox
+echo "Building busybox"
+make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}
+echo "Installing busybox"
+make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} CONFIG_PREFIX=${OUTDIR}/rootfs install
+
 
 echo "Library dependencies"
+cd ${OUTDIR}/rootfs
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
 # TODO: Add library dependencies to rootfs
+SYSROOT=$(${CROSS_COMPILE}gcc -print-sysroot)
+echo "Copying libraries"
+cp ${SYSROOT}/lib/ld-linux-aarch64.so.1 lib/ld-linux-aarch64.so.1
+cp ${SYSROOT}/lib64/libm.so.6 lib64/libm.so.6
+cp ${SYSROOT}/lib64/libresolv.so.2 lib64/libresolv.so.2
+cp ${SYSROOT}/lib64/libc.so.6 lib64/libc.so.6
 
 # TODO: Make device nodes
 
