@@ -91,6 +91,7 @@ ${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
 # TODO: Add library dependencies to rootfs
+cd ${OUTDIR}/rootfs
 SYSROOT=$(${CROSS_COMPILE}gcc -print-sysroot)
 echo "Copying libraries"
 cp ${SYSROOT}/lib/ld-linux-aarch64.so.1 lib/ld-linux-aarch64.so.1
@@ -99,12 +100,31 @@ cp ${SYSROOT}/lib64/libresolv.so.2 lib64/libresolv.so.2
 cp ${SYSROOT}/lib64/libc.so.6 lib64/libc.so.6
 
 # TODO: Make device nodes
+echo "Making nodes"
+cd ${OUTDIR}/rootfs
+sudo mknod -m 666 dev/null c 1 3
+sudo mknod -m 600 dev/console c 5 1
 
 # TODO: Clean and build the writer utility
+echo "Building write"
+cd ${FINDER_APP_DIR}
+make clean
+make CROSS_COMPILE=${CROSS_COMPILE}
 
 # TODO: Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
+echo "Copying write files"
+cd ${FINDER_APP_DIR}
+cp -r -L * ${OUTDIR}/rootfs/home
 
 # TODO: Chown the root directory
+echo "Chown root"
+cd ${OUTDIR}
+sudo chown -R root:root ${OUTDIR}/rootfs
 
 # TODO: Create initramfs.cpio.gz
+echo "Creating initramfs"
+cd ${OUTDIR}/rootfs
+find . | cpio -H newc -o -v --owner root:root > ${OUTDIR}/initramfs.cpio
+cd ${OUTDIR}
+gzip -f initramfs.cpio
